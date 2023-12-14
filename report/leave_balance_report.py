@@ -45,27 +45,49 @@ class LeaveBalanceReport(models.Model):
         """Loads report data"""
         tools.drop_view_if_exists(self._cr, 'report_balance_leave')
         self._cr.execute("""
-            CREATE or REPLACE view report_balance_leave as (
-            SELECT row_number() over(ORDER BY e.id) as id,
-                e.id AS emp_id,
-                e.gender as gender,
-                e.country_id as country_id,
-                e.department_id as department_id,
-                e.job_id as job_id,
-                lt.id AS leave_type_id,
-                SUM(al.number_of_days) AS allocated_days,
-                SUM(CASE WHEN l.state = 'validate' THEN l.number_of_days ELSE 0 END) AS taken_days,
-                SUM(al.number_of_days) - SUM(CASE WHEN l.state = 'validate' THEN l.number_of_days ELSE 0 END) AS 
-                balance_days,
-                e.company_id as company_id
-            FROM
-                hr_employee e
-                JOIN hr_leave_allocation al ON al.employee_id = e.id
-                JOIN hr_leave_type lt ON al.holiday_status_id = lt.id
-                LEFT JOIN hr_leave l ON l.employee_id = e.id AND l.holiday_status_id = lt.id
-            WHERE
-                e.active = True
-            GROUP BY
-                e.id,
-                lt.id)
+           CREATE OR REPLACE VIEW public.report_balance_leave(
+    id,
+    emp_id,
+    gender,
+    country_id,
+    department_id,
+    job_id,
+    leave_type_id,
+    allocated_days,
+    taken_days,
+    balance_days,
+    company_id)
+AS
+WITH hr_leave_taken_leaves(
+    employee_id,
+    taken_days,
+    holiday_status_id) AS(
+  SELECT l_1.employee_id,
+         sum(CASE
+               WHEN l_1.state::text = 'validate'::text THEN l_1.number_of_days
+               ELSE 0::double precision
+             END) AS taken_days,
+         l_1.holiday_status_id
+  FROM hr_leave l_1
+  GROUP BY l_1.employee_id,
+           l_1.holiday_status_id)
+ SELECT row_number() OVER(
+ ORDER BY e.id) AS id,
+          e.id AS emp_id,
+          e.gender,
+          e.country_id,
+          e.department_id,
+          e.job_id,
+          lt.id AS leave_type_id,
+          sum(al.number_of_days) AS allocated_days,
+          sum(l.taken_days) AS taken_days,
+          sum(al.number_of_days) - sum(l.taken_days) AS balance_days,
+          e.company_id
+ FROM hr_employee e
+      JOIN hr_leave_allocation al ON al.employee_id = e.id AND al.state::text = 'validate'::text
+      JOIN hr_leave_type lt ON al.holiday_status_id = lt.id
+      LEFT JOIN hr_leave_taken_leaves l ON l.employee_id = e.id AND l.holiday_status_id = lt.id
+ WHERE e.active = true
+ GROUP BY e.id,
+          lt.id;
             """)
