@@ -81,7 +81,7 @@ WITH hr_leave_taken_leaves(
           lt.id AS leave_type_id,
           sum(al.number_of_days) AS allocated_days,
           sum(l.taken_days) AS taken_days,
-          sum(al.number_of_days) - sum(l.taken_days) AS balance_days,
+          sum(al.number_of_days) - sum(COALESCE(l.taken_days, 0::double precision)) AS balance_days,
           e.company_id
  FROM hr_employee e
       JOIN hr_leave_allocation al ON al.employee_id = e.id AND al.state::text = 'validate'::text
