@@ -45,7 +45,7 @@ class LeaveBalanceReport(models.Model):
         """Loads report data"""
         tools.drop_view_if_exists(self._cr, 'report_balance_leave')
         self._cr.execute("""
-           CREATE OR REPLACE VIEW public.report_balance_leave(
+        CREATE OR REPLACE VIEW public.report_balance_leave(
     id,
     emp_id,
     gender,
@@ -78,16 +78,24 @@ WITH hr_leave_taken_leaves(
           e.country_id,
           e.department_id,
           e.job_id,
-          lt.id AS leave_type_id,
+          al.holiday_status_id AS leave_type_id,
           sum(al.number_of_days) AS allocated_days,
-          sum(l.taken_days) AS taken_days,
-          sum(al.number_of_days) - sum(COALESCE(l.taken_days, 0::double precision)) AS balance_days,
+          (
+            SELECT hr_leave_taken_leaves.taken_days
+            FROM hr_leave_taken_leaves
+            WHERE hr_leave_taken_leaves.employee_id = e.id AND
+                  hr_leave_taken_leaves.holiday_status_id = al.holiday_status_id
+          ) AS taken_days,
+          sum(al.number_of_days) - COALESCE((
+                                              SELECT hr_leave_taken_leaves.taken_days
+                                              FROM hr_leave_taken_leaves
+                                              WHERE hr_leave_taken_leaves.employee_id = e.id AND
+                                                    hr_leave_taken_leaves.holiday_status_id = al.holiday_status_id
+          ), 0::double precision) AS balance_days,
           e.company_id
  FROM hr_employee e
       JOIN hr_leave_allocation al ON al.employee_id = e.id AND al.state::text = 'validate'::text
-      JOIN hr_leave_type lt ON al.holiday_status_id = lt.id
-      LEFT JOIN hr_leave_taken_leaves l ON l.employee_id = e.id AND l.holiday_status_id = lt.id
  WHERE e.active = true
  GROUP BY e.id,
-          lt.id;
+          al.holiday_status_id;
             """)
